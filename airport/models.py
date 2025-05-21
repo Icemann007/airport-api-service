@@ -34,6 +34,18 @@ class Route(models.Model):
     def __str__(self) -> str:
         return f"{self.source.name} - {self.destination.name}"
 
+    @staticmethod
+    def validate_route_location(source, destination, error_to_raise):
+        if source == destination:
+            raise error_to_raise("Source and destination airports must be different")
+
+    def clean(self):
+        self.validate_route_location(self.source, self.destination, ValidationError)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
 
 class AirplaneType(models.Model):
     name = models.CharField(max_length=64)
@@ -58,6 +70,21 @@ class Airplane(models.Model):
 
     def __str__(self) -> str:
         return self.name
+
+    @staticmethod
+    def validate_airplane_size(rows, seats_in_row, error_to_raise):
+        if rows <= 0:
+            raise error_to_raise("Number of rows must be positive.")
+
+        if seats_in_row <= 0:
+            raise error_to_raise("Number of seats in a row must be positive.")
+
+    def clean(self):
+        self.validate_airplane_size(self.rows, self.seats_in_row, ValidationError)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
 
 
 class Crew(models.Model):
@@ -97,9 +124,19 @@ class Flight(models.Model):
     def __str__(self) -> str:
         return f"Flight: {self.id} on {str(self.route)}"
 
+    @staticmethod
+    def validate_flight_times(departure_time, arrival_time, error_to_raise):
+        if departure_time >= arrival_time:
+            raise error_to_raise("Arrival time must be after departure time")
+
     def clean(self):
-        if self.arrival_time <= self.departure_time:
-            raise ValidationError("Arrival time must be after departure time")
+        self.validate_flight_times(
+            self.departure_time, self.arrival_time, ValidationError
+        )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
 
 
 class Ticket(models.Model):
@@ -129,20 +166,30 @@ class Ticket(models.Model):
             f"Ticket {self.id} for Flight {self.flight}, seat: {self.row} - {self.seat}"
         )
 
-    def clean(self):
-        if not (1 <= self.row <= self.flight.airplane.rows):
-            raise ValidationError(
-                {
-                    "row": f"row must be in range [1, {self.flight.airplane.rows}], not {self.row}"
-                }
+    @staticmethod
+    def validate_ticket(row, num_rows, seat, num_seats, error_to_raise):
+        if not (1 <= row <= num_rows):
+            raise error_to_raise(
+                {"row": f"row must be in range [1, {num_rows}], not {row}"}
             )
 
-        if not (1 <= self.seat <= self.flight.airplane.seats_in_row):
-            raise ValidationError(
-                {
-                    "seat": f"seat must be in range [1, {self.flight.airplane.seats_in_row}], not {self.seat}"
-                }
+        if not (1 <= seat <= num_seats):
+            raise error_to_raise(
+                {"seat": f"seat must be in range [1, {num_seats}], not {seat}"}
             )
+
+    def clean(self):
+        self.validate_ticket(
+            self.row,
+            self.flight.airplane.rows,
+            self.seat,
+            self.flight.airplane.seats_in_row,
+            ValidationError,
+        )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
 
 
 class Order(models.Model):
