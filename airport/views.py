@@ -1,4 +1,5 @@
 from rest_framework import viewsets
+from rest_framework.permissions import IsAuthenticated
 
 from airport.models import Airport, Route, Airplane, Crew, Flight, Order, AirplaneType
 from airport.serializers import (
@@ -108,6 +109,7 @@ class OrderViewSet(viewsets.ModelViewSet):
     queryset = Order.objects.prefetch_related(
         "tickets__flight__route", "tickets__flight__airplane"
     )
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         queryset = super().get_queryset()
