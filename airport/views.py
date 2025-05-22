@@ -4,6 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 
 from airport.models import Airport, Route, Airplane, Crew, Flight, Order, AirplaneType
 from airport.pagination import OrderPagination
+from airport.permissions import IsAdminOrIfAuthenticatedReadOnly
 from airport.serializers import (
     AirportSerializer,
     RouteSerializer,
@@ -24,10 +25,12 @@ from airport.serializers import (
 class AirportViewSet(viewsets.ModelViewSet):
     queryset = Airport.objects.all()
     serializer_class = AirportSerializer
+    permission_classes = [IsAdminOrIfAuthenticatedReadOnly]
 
 
 class RouteViewSet(viewsets.ModelViewSet):
     queryset = Route.objects.select_related("source", "destination")
+    permission_classes = [IsAdminOrIfAuthenticatedReadOnly]
 
     def get_queryset(self):
         queryset = super().get_queryset()
@@ -57,10 +60,12 @@ class RouteViewSet(viewsets.ModelViewSet):
 class AirplaneTypeViewSet(viewsets.ModelViewSet):
     queryset = AirplaneType.objects.all()
     serializer_class = AirplaneTypeSerializer
+    permission_classes = [IsAdminOrIfAuthenticatedReadOnly]
 
 
 class AirplaneViewSet(viewsets.ModelViewSet):
     queryset = Airplane.objects.select_related("airplane_type")
+    permission_classes = [IsAdminOrIfAuthenticatedReadOnly]
 
     def get_serializer_class(self):
         if self.action in ("list", "retrieve"):
@@ -72,6 +77,7 @@ class AirplaneViewSet(viewsets.ModelViewSet):
 class CrewViewSet(viewsets.ModelViewSet):
     queryset = Crew.objects.all()
     serializer_class = CrewSerializer
+    permission_classes = [IsAdminOrIfAuthenticatedReadOnly]
 
 
 class FlightViewSet(viewsets.ModelViewSet):
@@ -83,6 +89,7 @@ class FlightViewSet(viewsets.ModelViewSet):
             - Count("tickets")
         )
     )
+    permission_classes = [IsAdminOrIfAuthenticatedReadOnly]
 
     def get_queryset(self):
         queryset = super().get_queryset()
