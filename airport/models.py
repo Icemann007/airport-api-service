@@ -163,7 +163,7 @@ class Ticket(models.Model):
 
     def __str__(self) -> str:
         return (
-            f"Ticket {self.id} for Flight {self.flight}, seat: {self.row} - {self.seat}"
+            f"Ticket {self.id} for Flight {self.flight.id}, row: {self.row} seat: {self.seat}"
         )
 
     @staticmethod
