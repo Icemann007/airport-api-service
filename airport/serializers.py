@@ -200,7 +200,7 @@ class OrderSerializer(serializers.ModelSerializer):
         fields = ["id", "tickets", "created_at"]
 
     def create(self, validated_data):
-        with transaction.atomic:
+        with transaction.atomic():
             tickets_data = validated_data.pop("tickets")
             order = Order.objects.create(**validated_data)
             for ticket_data in tickets_data:
