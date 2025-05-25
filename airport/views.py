@@ -4,7 +4,17 @@ from drf_spectacular.utils import extend_schema, OpenApiParameter
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 
-from airport.models import Airport, Route, Airplane, Crew, Flight, Order, AirplaneType
+from airport.models import (
+    Airport,
+    Route,
+    Airplane,
+    Crew,
+    Flight,
+    Order,
+    AirplaneType,
+    Country,
+    City,
+)
 from airport.pagination import OrderPagination
 from airport.permissions import IsAdminOrIfAuthenticatedReadOnly
 from airport.serializers import (
@@ -21,13 +31,39 @@ from airport.serializers import (
     FlightListSerializer,
     FlightDetailSerializer,
     OrderListSerializer,
+    CountrySerializer,
+    CitySerializer,
+    CityListSerializer,
+    AirportListSerializer,
 )
 
 
-class AirportViewSet(viewsets.ModelViewSet):
-    queryset = Airport.objects.all()
-    serializer_class = AirportSerializer
+class CountryViewSet(viewsets.ModelViewSet):
+    queryset = Country.objects.all()
+    serializer_class = CountrySerializer
     permission_classes = [IsAdminOrIfAuthenticatedReadOnly]
+
+
+class CityViewSet(viewsets.ModelViewSet):
+    queryset = City.objects.select_related("country")
+    permission_classes = [IsAdminOrIfAuthenticatedReadOnly]
+
+    def get_serializer_class(self):
+        if self.action in ("list", "retrieve"):
+            return CityListSerializer
+
+        return CitySerializer
+
+
+class AirportViewSet(viewsets.ModelViewSet):
+    queryset = Airport.objects.select_related("city", "closest_big_city")
+    permission_classes = [IsAdminOrIfAuthenticatedReadOnly]
+
+    def get_serializer_class(self):
+        if self.action in ("list", "retrieve"):
+            return AirportListSerializer
+
+        return AirportSerializer
 
 
 class RouteViewSet(viewsets.ModelViewSet):
@@ -63,12 +99,12 @@ class RouteViewSet(viewsets.ModelViewSet):
             OpenApiParameter(
                 name="source",
                 type=OpenApiTypes.STR,
-                description="Filter by source route (ex. ?source=Lviv)"
+                description="Filter by source route (ex. ?source=Lviv)",
             ),
             OpenApiParameter(
                 name="destination",
                 type=OpenApiTypes.STR,
-                description="Filter by destination (ex. ?destination=Lviv)"
+                description="Filter by destination (ex. ?destination=Lviv)",
             ),
         ]
     )
@@ -143,18 +179,18 @@ class FlightViewSet(viewsets.ModelViewSet):
             OpenApiParameter(
                 name="departure_date",
                 type=OpenApiTypes.DATE,
-                description="Filter by departure date (ex. ?departure_date=2025-05-22)"
+                description="Filter by departure date (ex. ?departure_date=2025-05-22)",
             ),
             OpenApiParameter(
                 name="arrival_date",
                 type=OpenApiTypes.DATE,
-                description="Filter by arrival date (ex ?arrival_date=2025-05-28)"
+                description="Filter by arrival date (ex ?arrival_date=2025-05-28)",
             ),
             OpenApiParameter(
                 name="airplane",
                 type=OpenApiTypes.INT,
-                description="Filter by airplane id (ex ?airplane=1)"
-            )
+                description="Filter by airplane id (ex ?airplane=1)",
+            ),
         ]
     )
     def list(self, request, *args, **kwargs):
@@ -175,7 +211,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         return queryset
 
     def get_serializer_class(self):
-        if self.action == "list":
+        if self.action in ("list", "retrieve"):
             return OrderListSerializer
 
         return OrderSerializer
