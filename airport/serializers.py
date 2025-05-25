@@ -1,4 +1,5 @@
 from django.db import transaction
+from django.utils.timezone import now
 from rest_framework import serializers
 from rest_framework.validators import UniqueTogetherValidator
 
@@ -11,13 +12,51 @@ from airport.models import (
     Flight,
     Ticket,
     Order,
+    Country,
+    City,
 )
+
+
+class CountrySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Country
+        fields = ["id", "name"]
+
+
+class CitySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = City
+        fields = ["id", "name", "country"]
+        validators = [
+            UniqueTogetherValidator(
+                queryset=City.objects.all(), fields=["name", "country"]
+            )
+        ]
+
+
+class CityListSerializer(CitySerializer):
+    country = serializers.SlugRelatedField(
+        many=False,
+        read_only=True,
+        slug_field="name",
+    )
+
+
+class CityNameSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = City
+        fields = ["name"]
 
 
 class AirportSerializer(serializers.ModelSerializer):
     class Meta:
         model = Airport
-        fields = ["id", "name", "closest_big_city"]
+        fields = ["id", "name", "country", "city", "closest_big_city", "image"]
+
+
+class AirportListSerializer(AirportSerializer):
+    city = CityNameSerializer(many=False, read_only=True)
+    closest_big_city = CityNameSerializer(many=False, read_only=True)
 
 
 class RouteSerializer(serializers.ModelSerializer):
@@ -40,21 +79,19 @@ class RouteSerializer(serializers.ModelSerializer):
 
 
 class RouteListSerializer(RouteSerializer):
-    source = serializers.SlugRelatedField(
-        many=False,
-        read_only=True,
-        slug_field="closest_big_city",
-    )
-    destination = serializers.SlugRelatedField(
-        many=False,
-        read_only=True,
-        slug_field="closest_big_city",
-    )
+    source = serializers.SerializerMethodField()
+    destination = serializers.SerializerMethodField()
+
+    def get_source(self, obj):
+        return getattr(obj.source.closest_big_city, "name")
+
+    def get_destination(self, obj):
+        return getattr(obj.destination.closest_big_city, "name")
 
 
 class RouteDetailSerializer(RouteSerializer):
-    source = AirportSerializer(many=False, read_only=True)
-    destination = AirportSerializer(many=False, read_only=True)
+    source = AirportListSerializer(many=False, read_only=True)
+    destination = AirportListSerializer(many=False, read_only=True)
 
 
 class AirplaneTypeSerializer(serializers.ModelSerializer):
@@ -66,7 +103,15 @@ class AirplaneTypeSerializer(serializers.ModelSerializer):
 class AirplaneSerializer(serializers.ModelSerializer):
     class Meta:
         model = Airplane
-        fields = ["id", "name", "rows", "seats_in_row", "capacity", "airplane_type"]
+        fields = [
+            "id",
+            "name",
+            "rows",
+            "seats_in_row",
+            "capacity",
+            "airplane_type",
+            "airplane_image",
+        ]
 
     def validate(self, attrs):
         Airplane.validate_airplane_size(
@@ -88,7 +133,7 @@ class AirplaneListSerializer(AirplaneSerializer):
 class CrewSerializer(serializers.ModelSerializer):
     class Meta:
         model = Crew
-        fields = ["id", "first_name", "last_name", "full_name"]
+        fields = ["id", "first_name", "last_name", "full_name", "position", "image"]
 
 
 class FlightSerializer(serializers.ModelSerializer):
@@ -107,11 +152,11 @@ class FlightSerializer(serializers.ModelSerializer):
 
 class FlightListSerializer(serializers.ModelSerializer):
     route_source = serializers.CharField(
-        source="route.source.closest_big_city",
+        source="route.source.closest_big_city.name",
         read_only=True,
     )
     route_destination = serializers.CharField(
-        source="route.destination.closest_big_city",
+        source="route.destination.closest_big_city.name",
         read_only=True,
     )
     airplane_name = serializers.CharField(source="airplane.name", read_only=True)
@@ -153,6 +198,11 @@ class TicketSerializer(serializers.ModelSerializer):
         ]
 
     def validate(self, attrs):
+        if attrs["flight"].departure_time <= now():
+            raise serializers.ValidationError(
+                "Cannot create ticket for a flight that has already departed."
+            )
+
         Ticket.validate_ticket(
             attrs["row"],
             attrs["flight"].airplane.rows,
@@ -184,6 +234,7 @@ class FlightDetailSerializer(serializers.ModelSerializer):
             "crew",
             "departure_time",
             "arrival_time",
+            "duration",
             "taken_seats",
         ]
 
