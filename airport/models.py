@@ -1,0 +1,314 @@
+import pathlib
+import uuid
+
+from django.conf import settings
+from django.core.exceptions import ValidationError
+from django.db import models
+from django.utils.text import slugify
+from django.utils.timezone import now
+
+
+class Country(models.Model):
+    name = models.CharField(max_length=64, unique=True)
+
+    class Meta:
+        verbose_name_plural = "countries"
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class City(models.Model):
+    name = models.CharField(max_length=64)
+    country = models.ForeignKey(
+        "Country",
+        on_delete=models.CASCADE,
+        related_name="cities",
+    )
+
+    class Meta:
+        verbose_name_plural = "cities"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["name", "country"], name="unique_city_per_country"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.country.name}: {self.name}"
+
+
+def airport_image_path(instance: "Airport", filename: str) -> pathlib.Path:
+    filename = (
+        f"{slugify(instance.name)}-{uuid.uuid4()}" + pathlib.Path(filename).suffix
+    )
+    return pathlib.Path("upload/airports/") / pathlib.Path(filename)
+
+
+class Airport(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    city = models.ForeignKey(
+        "City",
+        on_delete=models.CASCADE,
+        related_name="airports",
+    )
+    closest_big_city = models.ForeignKey(
+        "City",
+        on_delete=models.CASCADE,
+        related_name="nearby_airports",
+    )
+    image = models.ImageField(
+        null=True,
+        blank=True,
+        upload_to=airport_image_path,
+    )
+
+    @property
+    def country(self) -> str:
+        return self.city.country.name
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class Route(models.Model):
+    source = models.ForeignKey(
+        "Airport",
+        on_delete=models.CASCADE,
+        related_name="source_routes",
+    )
+    destination = models.ForeignKey(
+        "Airport",
+        on_delete=models.CASCADE,
+        related_name="destination_routes",
+    )
+    distance = models.IntegerField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["source", "destination"], name="unique_route_source_destination"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.source.name} - {self.destination.name}"
+
+    @staticmethod
+    def validate_route_location(source, destination, error_to_raise):
+        if source == destination:
+            raise error_to_raise("Source and destination airports must be different")
+
+    def clean(self):
+        self.validate_route_location(self.source, self.destination, ValidationError)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class AirplaneType(models.Model):
+    name = models.CharField(max_length=64, unique=True)
+
+    def __str__(self) -> str:
+        return self.name
+
+
+def airplane_image_path(instance: "Airplane", filename: str) -> pathlib.Path:
+    filename = (
+        f"{slugify(instance.name)}-{uuid.uuid4()}" + pathlib.Path(filename).suffix
+    )
+    return pathlib.Path("upload/airplanes/") / pathlib.Path(filename)
+
+
+class Airplane(models.Model):
+    name = models.CharField(max_length=64)
+    rows = models.IntegerField()
+    seats_in_row = models.IntegerField()
+    airplane_type = models.ForeignKey(
+        "AirplaneType",
+        on_delete=models.CASCADE,
+        related_name="airplanes",
+    )
+    airplane_image = models.ImageField(
+        null=True,
+        blank=True,
+        upload_to=airplane_image_path,
+    )
+
+    @property
+    def capacity(self) -> int:
+        return self.rows * self.seats_in_row
+
+    def __str__(self) -> str:
+        return self.name
+
+    @staticmethod
+    def validate_airplane_size(rows, seats_in_row, error_to_raise):
+        if rows <= 0:
+            raise error_to_raise("Number of rows must be positive.")
+
+        if seats_in_row <= 0:
+            raise error_to_raise("Number of seats in a row must be positive.")
+
+    def clean(self):
+        self.validate_airplane_size(self.rows, self.seats_in_row, ValidationError)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+def crew_image_path(instance: "Crew", filename: str) -> pathlib.Path:
+    filename = (
+        f"{slugify(instance.full_name)}-{uuid.uuid4()}" + pathlib.Path(filename).suffix
+    )
+    return pathlib.Path("upload/crew/") / pathlib.Path(filename)
+
+
+class Crew(models.Model):
+    class PositionChoices(models.TextChoices):
+        CAPTAIN = "Captain"
+        FIRST_OFFICER = "First_officer"
+        PURSER = "Purser"
+        RADIO_OPERATOR = "Radio_operator"
+        FLIGHT_ATTENDANT = "Flight_attendant"
+        CABIN_DIRECTOR = "Cabin_director"
+
+    first_name = models.CharField(max_length=64)
+    last_name = models.CharField(max_length=64)
+    position = models.CharField(max_length=64, choices=PositionChoices.choices)
+    image = models.ImageField(
+        null=True,
+        blank=True,
+        upload_to=crew_image_path,
+    )
+
+    @property
+    def full_name(self) -> str:
+        return f"{self.first_name} {self.last_name}"
+
+    def __str__(self) -> str:
+        return self.first_name + " " + self.last_name
+
+
+class Flight(models.Model):
+    route = models.ForeignKey(
+        "Route",
+        on_delete=models.CASCADE,
+        related_name="flights",
+    )
+    airplane = models.ForeignKey(
+        "Airplane",
+        on_delete=models.CASCADE,
+        related_name="flights",
+    )
+    crew = models.ManyToManyField(
+        Crew,
+        related_name="flights",
+        blank=True,
+    )
+    departure_time = models.DateTimeField()
+    arrival_time = models.DateTimeField()
+
+    class Meta:
+        ordering = ["-departure_time"]
+
+    @property
+    def duration(self) -> str:
+        delta = self.arrival_time - self.departure_time
+        total_minutes = int(delta.total_seconds() // 60)
+        hours, minutes = divmod(total_minutes, 60)
+
+        if minutes == 0:
+            return f"{hours} hours"
+
+        return f"{hours} hours {minutes} minutes"
+
+    def __str__(self) -> str:
+        return f"Flight: {self.id} on {str(self.route)}"
+
+    @staticmethod
+    def validate_flight_times(departure_time, arrival_time, error_to_raise):
+        if departure_time >= arrival_time:
+            raise error_to_raise("Arrival time must be after departure time")
+
+    def clean(self):
+        self.validate_flight_times(
+            self.departure_time, self.arrival_time, ValidationError
+        )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class Ticket(models.Model):
+    row = models.IntegerField()
+    seat = models.IntegerField()
+    flight = models.ForeignKey(
+        "Flight",
+        on_delete=models.CASCADE,
+        related_name="tickets",
+    )
+    order = models.ForeignKey(
+        "Order",
+        on_delete=models.CASCADE,
+        related_name="tickets",
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["flight", "row", "seat"], name="unique_ticket_row_seat_flight"
+            )
+        ]
+        ordering = ["row", "seat"]
+
+    def __str__(self) -> str:
+        return f"Ticket {self.id} for Flight {self.flight.id}, row: {self.row} seat: {self.seat}"
+
+    @staticmethod
+    def validate_ticket(row, num_rows, seat, num_seats, error_to_raise):
+        if not (1 <= row <= num_rows):
+            raise error_to_raise(
+                {"row": f"row must be in range [1, {num_rows}], not {row}"}
+            )
+
+        if not (1 <= seat <= num_seats):
+            raise error_to_raise(
+                {"seat": f"seat must be in range [1, {num_seats}], not {seat}"}
+            )
+
+    def clean(self):
+        if self.flight.departure_time <= now():
+            raise ValidationError(
+                "Cannot create ticket for a flight that has already departed."
+            )
+
+        self.validate_ticket(
+            self.row,
+            self.flight.airplane.rows,
+            self.seat,
+            self.flight.airplane.seats_in_row,
+            ValidationError,
+        )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        return super().save(*args, **kwargs)
+
+
+class Order(models.Model):
+    created_at = models.DateTimeField(auto_now_add=True)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="orders",
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self) -> str:
+        return f"Order {self.id} by {self.user}"
