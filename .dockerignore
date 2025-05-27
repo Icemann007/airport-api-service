@@ -1,0 +1,14 @@
+.venv
+.idea
+Dockerfile
+docker-compose.yaml
+.DS_Store
+.gitignore
+.env
+__pycache__/
+*.pyc
+*.sqlite3
+venv
+.github
+static/
+media/
